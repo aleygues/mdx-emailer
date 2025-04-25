@@ -1,0 +1,32 @@
+{
+  "name": "emailer",
+  "version": "1.0.0",
+  "main": "src/index.ts",
+  "license": "MIT",
+  "scripts": {
+    "dev": "nodemon src/index.ts",
+    "start": "ts-node src/index.ts"
+  },
+  "dependencies": {
+    "@mdx-js/mdx": "^3.1.0",
+    "@mdx-js/node-loader": "^3.1.0",
+    "@types/html-to-text": "^9.0.4",
+    "express": "^5.1.0",
+    "html-to-text": "^9.0.5",
+    "juice": "^11.0.1",
+    "node-mailjet": "^6.0.8",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "tmp": "^0.2.3"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.1",
+    "@types/node": "^22.14.1",
+    "@types/react": "^19.1.2",
+    "@types/react-dom": "^19.1.2",
+    "@types/tmp": "^0.2.6",
+    "nodemon": "^3.1.10",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.8.3"
+  }
+}
