@@ -8,17 +8,25 @@ import { convert } from "html-to-text";
 
 type RenderArgs = {
   template: string;
-  components: { [key: string]: string };
+  paths: {
+    components: { [key: string]: string };
+    css?: string;
+  };
   emailsFolder: string;
   data?: any;
   lang: string;
-  css?: string;
 };
 
-export async function render(args: RenderArgs) {
+export type RenderedEmailType = {
+  html: string;
+  text: string;
+  subject: string;
+};
+
+export async function render(args: RenderArgs): Promise<RenderedEmailType> {
   const mdxComponents: { [key: string]: { [key: string]: React.FC<any> } } = {};
 
-  for (const [lang, path] of Object.entries(args.components)) {
+  for (const [lang, path] of Object.entries(args.paths.components)) {
     const maybeComponents = await import(
       `${process.cwd()}/${args.emailsFolder}/${path}`
     );
@@ -58,9 +66,9 @@ export async function render(args: RenderArgs) {
   // prepare data
   const mergedData = {
     ...data,
-    style: args.css
+    style: args.paths.css
       ? fs.readFileSync(
-          `${process.cwd()}/${args.emailsFolder}/${args.css}`,
+          `${process.cwd()}/${args.emailsFolder}/${args.paths.css}`,
           "utf-8"
         )
       : "",

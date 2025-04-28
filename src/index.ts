@@ -1,35 +1,31 @@
-import {
-  existsSync,
-  mkdirSync,
-  readdirSync,
-  readFileSync,
-  rmSync,
-  statSync,
-  writeFileSync,
-} from "fs";
+import { existsSync, mkdirSync, rmSync, writeFileSync } from "fs";
 import express, { Request, Response } from "express";
 import { error, info } from "./logger";
 import { render } from "./renderer";
+import { exit } from "process";
+import { RenderRequestSchema, SendRequestSchema } from "./schemas";
+import { InferType } from "yup";
+import { sendEmail } from "./email";
+
+if (!process.env.SECRET_KEY) {
+  error("🔴 missing SECRET_KEY env variable");
+  exit(1);
+}
 
 const app = express();
 
 app.use(express.json());
 
+app.use((req, res, next) => {
+  if (req.query.apikey !== process.env.SECRET_KEY) {
+    res.status(403).json({ message: "wrong api key" });
+    return;
+  } else {
+    next();
+  }
+});
+
 async function prepareRenderer(req: Request, res: Response) {
-  if (!req.body.paths || !req.body.paths.components) {
-    res
-      .status(400)
-      .json({ message: "body.paths and body.paths.components are required" });
-    return;
-  }
-
-  if (!req.body.files || typeof req.body.files !== "string") {
-    res
-      .status(400)
-      .json({ message: "body.files should be a b64 of files array" });
-    return;
-  }
-
   const files = JSON.parse(
     Buffer.from(req.body.files, "base64").toString("utf8")
   );
@@ -57,46 +53,95 @@ async function prepareRenderer(req: Request, res: Response) {
 
   return {
     emailsFolder,
-    components: req.body.paths.components,
-    css: req.body.paths.css,
+    paths: {
+      components: req.body.paths.components,
+      css: req.body.paths.css,
+    },
   };
 }
 
 app.post("/render-request", async (req, res) => {
-  if (!req.body.template) {
-    res.status(400).json({ message: "body.template is required" });
-    return;
-  }
-
-  if (!req.body.lang) {
-    res.status(400).json({ message: "body.lang is required" });
-    return;
-  }
-
-  const args = await prepareRenderer(req, res);
-
-  if (!args) {
-    return;
-  }
-
   try {
-    res.json(
-      await render({
-        ...args,
-        data: req.body.data,
-        template: req.body.template,
-        lang: req.body.lang,
-      })
-    );
+    const args: InferType<typeof RenderRequestSchema> =
+      await RenderRequestSchema.validate(req.body);
+
+    const rendererArgs = await prepareRenderer(req, res);
+
+    if (!rendererArgs) {
+      return;
+    }
+
+    try {
+      res.json(
+        await render({
+          ...rendererArgs,
+          data: args.data,
+          template: args.template,
+          lang: args.lang,
+        })
+      );
+    } catch (e: any) {
+      res.status(400).json({ message: e.message });
+    } finally {
+      rmSync(rendererArgs.emailsFolder, { recursive: true, force: true });
+    }
   } catch (e: any) {
-    res.status(400).json({ message: e.message });
-  } finally {
-    rmSync(args.emailsFolder, { recursive: true, force: true });
+    if (e.errors) {
+      res.status(400).json({
+        message: "validation error",
+        errors: e.errors,
+      });
+    } else {
+      res.status(500).json({
+        message: "internal error",
+      });
+    }
   }
 });
 
 app.post("/send-request", async (req, res) => {
-  res.status(204).send();
+  try {
+    const args: InferType<typeof SendRequestSchema> =
+      await SendRequestSchema.validate(req.body);
+
+    const rendererArgs = await prepareRenderer(req, res);
+
+    if (!rendererArgs) {
+      return;
+    }
+
+    // we may add cache based on hash here
+    for (const dest of args.to) {
+      const email = await render({
+        ...rendererArgs,
+        data: Object.assign(args.data, dest.data ?? {}),
+        template: args.template,
+        lang: dest.lang ?? args.lang,
+      });
+      const attachments = (args.attachments ?? []).concat(
+        dest.attachments ?? []
+      );
+      sendEmail({
+        to: dest.email,
+        attachments,
+        email,
+        fromEmail: args.fromEmail,
+        fromName: args.fromName,
+      });
+    }
+    res.status(204).send();
+  } catch (e: any) {
+    if (e.errors) {
+      res.status(400).json({
+        message: "validation error",
+        errors: e.errors,
+      });
+    } else {
+      res.status(500).json({
+        message: "internal error",
+      });
+    }
+  }
 });
 
 const port = process.env.PORT || 3000;
